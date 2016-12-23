@@ -1,0 +1,122 @@
+define.selsweep.region <- function(snp.data,size,out.file.name){
+
+  # Input data is transfered vis snp.data
+
+  if(missing(snp.data)){
+    stop("An data.frame object contains SNP data must be provided!")
+  }else{
+    column_count=ncol(snp.data)
+    if(column_count!=5){
+      stop("Input data must be in the required format. See the example input file!")
+    }
+  }
+
+  # Default value for size is 50000
+  if(missing(size)){
+    size <- 50000
+  }
+  # Default filename for result is "Selective.Sweep.Region.txt"
+  if(missing(out.file.name)){
+    out.file.name="Selective.Sweep.Region.txt"
+  }
+
+
+  # set the lengths of chromosomes
+  chr.length <- c(158337067,137060424,121430405,120829699,121191424,119458736,112638659,113384836,
+                  105708250,104305016,107310763,91163125,84240350,84648390,85296676,81724687,
+                  75158596,66004023,64057457,72042655,71599096,61435874,52530062,62714930,42904170,
+                  51681464,45407902,46312546,51505224)
+
+  # provided SNP data is stored in "snp.data"
+  # set the region around the SNP position according to "size"
+  for (i in 1:nrow(snp.data)){
+    chr.num=snp.data[i,2]
+    snp.pos=snp.data[i,3]
+    chr.end=chr.length[chr.num]
+    region.left=snp.pos-size
+    if(region.left<=0){
+      region.left=1
+    }
+    region.right=snp.pos+size
+    if(region.right>chr.end){
+      region.right=chr.end
+    }
+    snp.data[i,6]=region.left
+    snp.data[i,7]=region.right
+  }
+
+  # Name the columns in snp.data
+  names(snp.data)=c("snp.id","chr","pos","stat","pvalue","s.left","s.right")
+
+  # set intermediate objects "d" and "e"
+  d=subset(snp.data,select=c("chr","s.left","s.right"))
+  e=subset(snp.data,select=c("chr","stat","pvalue"))
+
+  # Start processing circles
+  chroms=d$chr
+  chroms=chroms[!duplicated(chroms)]
+
+
+  for (i in chroms) {
+    d.part <- subset(d, d$chr == i)
+    e.part <- subset(e, e$chr == i)
+    cyc1 <- length(d.part$chr) -1
+    for (j in 1:cyc1) {
+      if(d.part[j,3] >= d.part[(j+1),2]) {
+        d.part[(j+1),2] <- d.part[j,2]
+      }
+    }
+    cyc2 <- length(d.part$chr)
+    for (k in cyc2:2) {
+      if(d.part[(k-1),2] == d.part[k,2]){
+        d.part[(k-1),3] <- d.part[k,3]
+      }
+    }
+    d.part[1,4] <- d.part[1,2]
+    d.part[1,5] <- d.part[1,3]
+    group <- 1
+    d.part[1,6] <- group
+    e.part[1,4] <- group
+    for (l in 2:cyc2) {
+      if(d.part[l,2]==d.part[l-1,2]){
+        d.part[l,4] <- NA
+        d.part[l,5] <- NA
+        d.part[l,6] <- d.part[l-1,6]
+        e.part[l,4] <- e.part[l-1,4]
+      }else{
+        group <- group+1
+        d.part[l,4] <- d.part[l,2]
+        d.part[l,5] <- d.part[l,3]
+        d.part[l,6] <- group
+        e.part[l,4] <- group
+      }
+    }
+
+    names(d.part) <- c("chr","s.left","s.right","l.left","l.right","group")
+    names(e.part) <- c("chr","stat","pvalue","group")
+    snp.data$w.left[snp.data$chr==i] <- d.part$l.left
+    snp.data$w.right[snp.data$chr==i] <- d.part$l.right
+
+
+    n.group <- max(d.part$group)
+    for (m in 1:n.group){
+      stat.max <- max(e.part$stat[e.part$group == m])
+      pvalue.min <- min(e.part$pvalue[e.part$group == m])
+      d.part$stat.max[d.part$group == m] <- stat.max
+      d.part$pvalue.min[d.part$group == m] <- pvalue.min
+    }
+    names(d.part) <- c("chr","s.left","s.right","l.left","l.right","group","stat.max","pvalue.min")
+    for (n in 1:cyc2) {
+      if(is.na(d.part$l.right[n])){
+        d.part$stat.max[n] <- NA
+        d.part$pvalue.min[n] <- NA
+      }
+    }
+    snp.data$stat.max[snp.data$chr==i] <- d.part$stat.max
+    snp.data$pvalue.min[snp.data$chr==i] <- d.part$pvalue.min
+
+  }
+  names(snp.data) <- c("SNP.ID","Chr","Pos","Statistic","P-value","Defined.Region.Left","Define.Region.Right",
+                       "SelectiveSweep.Region.Left","SelectiveSweep.Region.Right","Statistic.Max","P-value.Min")
+  write.table(snp.data,file=out.file.name,sep="\t",row.names=F)
+}
